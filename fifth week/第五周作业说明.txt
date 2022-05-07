@@ -1,0 +1,170 @@
+在本周作业中，将应用反向传播算法实现神经网络来学习参数并识别手写数字
+从已知的代码部分可知本次作业的神经网络为输入层(400)-隐藏层(25)-输出层(10)的三层神经网络模型
+1.首先加载并可视化数据：Loading and Visualizing Data ...
+
+训练集数据存放在ex4data1.mat文件中，使用：
+load('ex4data1.mat');
+m = size(X, 1);
+% Randomly select 100 data points to display
+sel = randperm(size(X, 1));          %size(X, 1) = 5000，sel就是将1~5000的数字打乱，形成5000维的行向量
+sel = sel(1:100);                           %sel是5000维的行向量，取出前100个数
+displayData(X(sel, :));                   %以sel中的数字为行数，找到X中所有这样的行并绘制图案，就是随机从5000个样本中选100个样本进行绘制图案
+X是一个5000×400的矩阵，5000是样本数，400是每个样本的特征量
+
+
+2.加载神经网络参数：Loading Saved Neural Network Parameters ...
+将已经训练好的一组参数加载到Theta1，Theta2中，这组参数存放在ex4weights.mat中
+load('ex4weights.mat');
+Theta1：25×401         %每一行都代表了映射向一个隐藏单元的权重
+Theta2：10×26
+
+3.前向传播和代价函数：Feedforward Using Neural Network ...
+实现神经网络的代价函数和梯度。首先，在nnCostFunction.m中完成代码，返回代价
+function [J grad] = nnCostFunction(nn_params, ...
+                                   input_layer_size, ...
+                                   hidden_layer_size, ...
+                                   num_labels, ...
+                                   X, y, lambda)
+首先将nn_params转化为Theta1，Theta2的矩阵形式，使用Reshape函数
+为输入层加上偏置值
+X = [ones(m,1) X];
+计算隐藏层的激活值：
+a2 = sigmoid(X * Theta1');
+为隐藏层加上偏置值
+a2 = [ones(m,1) a2];
+计算输出单元的偏置值
+a3 = sigmoid(a2 * Theta2');
+计算代价函数前先将输出的y转换为0，1表示的向量：
+y1 = zeros(m,num_labels)                          %先初始化y1是由m个k维向量组成，每个k维向量中1个元素为1，其他元素为0，使用for循环实现
+原本的y是0~9中的某个数字，比如y(1) = 3，... ,y(m) = 6，需要使用for循环变成0，1表示的向量
+for i = 1:m
+y1(i，y(i))  = 1;
+endfor
+此时每一行就是每个样本的输出向量，计算代价函数，正则化部分要去除偏置项，即除了偏置项外其他参数求平方相加：
+J = sum(diag(-y1 * log(a3)' - (1 - y1) * log(1 - a3)')) / m + (sum(sum(Theta1(:,2:end) .^ 2)) + sum(sum(Theta2(:,2:end) .^ 2))) * lambda / (2 * m);  
+
+4.然后开始计算误差，进行反向传播
+对于一个输出节点，我们可以直接测量网络激活与真实目标值的差值，并以此定义δj(3)(因为第3层是输出层)。对于隐藏单元，您将根据层(l + 1)中节点的误差项的加权平均值计算δj(l)。
+此时，对于误差delta的更新，需要计算每个样本的激活值，使用for循环，这也是题目要求的
+%计算误差，进行反向传播
+delta1 = zeros(size(Theta1))       %初始化误差矩阵
+delta2 = zeros(size(Theta2)) 
+
+%使用for循环更新误差矩阵，基本都为行向量      
+for i = 1 : m
+  x1 = X(i,:);         %x1记录第i个样本的特征值     
+  a2 = sigmoid(x1 * Theta1');   %记录第i个样本的第二层激活值
+  a2 = [ones(1) a2];            %为第二层加上偏置项
+  %z3 = a2 * Theta2';
+  a3 = sigmoid(a2 * Theta2');   %记录第i个样本的第三层激活值
+  err3 = a3 - y1(i,:);          %计算输出层的误差，几个激活值减去真实值
+  z2 = x1 * Theta1';   
+  err2 = err3 * Theta2(:,2:end) .* sigmoidGradient(z2);  %g(z)的导数
+  delta1 = delta1 + err2' * x1;  %公式
+  delta2 = delta2 + err3' * a2;  %公式
+endfor;
+
+
+Theta1_grad = delta1 / m;   %个样本求得的误差取平均
+Theta1_grad(:,2:end) += Theta1(:,2:end) * lambda / m;
+%偏置项不需要更新权重
+Theta2_grad = delta2 / m;
+Theta2_grad(:,2:end) += Theta2(:,2:end) * lambda / m;
+此时我们得到正则化的代价函数，以及每个权重的梯度，即代价函数关于每个函数的偏导数
+
+5.计算激活函数的偏导数
+在运行反向传播算法之前，需要计算激活函数关于每一个激活项的导数
+%可以使用链式法则得到
+g = sigmoid(z) .* (1-sigmoid(z));
+
+
+6.初始化参数
+
+使用randInitializeWeights.m函数初始化神经网络参数
+随机初始化打破对称效果，将初始化的第一列置为1，作为偏置项
+设置一个限定参数的值ϵ，ϵ是一个很小的值，假设ϵ = 2，W是用来初始化的函数
+%L_out是传出连接，L_in是传入连接
+INIT_EPSILON = 0.10
+W = rand(L_out,L_in + 1)*(2*INIT_EPSILON) - INIT_EPSILON;
+使用初始化函数W初始化参数Theta1，Theta2
+initial_Theta1 = randInitializeWeights(input_layer_size, hidden_layer_size);
+initial_Theta2 = randInitializeWeights(hidden_layer_size, num_labels);
+将初始化的参数全部转为一个列向量：
+initial_nn_params = [initial_Theta1(:) ; initial_Theta2(:)];
+
+
+7.实现反向传播算法，检验梯度
+由反向传播得到神经网络的权重偏导数，即梯度
+求出数值梯度：在文件computeNumericalGradient.m中
+numgrad = zeros(size(theta));
+perturb = zeros(size(theta));
+e = 1e-4;
+for p = 1:numel(theta)
+    % Set perturbation vector
+    perturb(p) = e;
+    loss1 = J(theta - perturb);
+    loss2 = J(theta + perturb);
+    % Compute Numerical Gradient
+    numgrad(p) = (loss2 - loss1) / (2*e);
+    perturb(p) = 0;
+end
+这个在反向传播算法-梯度检测笔记中有，有点像导数的定义
+然后检验梯度，看反向传播算法得到的梯度与数值梯度的偏差，在文件checkNNGradients.m中有检验代码
+
+8.训练神经网络
+到目前为止，所有的代码都已经写完，下面使用高级优化函数fmincg训练我们的代价函数
+function [X, fX, i] = fmincg(f, X, options, P1, P2, P3, P4, P5)
+最小化代价函数：costFunction = @(p) nnCostFunction(p, ...
+                                   input_layer_size, ...
+                                   hidden_layer_size, ...
+                                   num_labels, X, y, lambda);
+获得最小化代价函数得到的参数，将参数重新组合为矩阵Theta1，Theta2
+Theta1 = reshape(nn_params(1:hidden_layer_size * (input_layer_size + 1)), ...
+                 hidden_layer_size, (input_layer_size + 1));
+
+Theta2 = reshape(nn_params((1 + (hidden_layer_size * (input_layer_size + 1))):end), ...
+                 num_labels, (hidden_layer_size + 1));
+此时我们就已经获得了最优的参数，并将其更新为权重
+
+
+9.可视化权重
+可以使用displayData(Theta1(:, 2:end));函数可视化权重，函数代码在displayData.m中
+
+
+10.进行预测
+predict函数在predict.m的代码中，利用训练好的权重以及样本，预测出结果
+pred = predict(Theta1, Theta2, X);
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
