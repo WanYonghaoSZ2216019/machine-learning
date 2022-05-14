@@ -1,0 +1,222 @@
+本周的编程作业：实现正则化线性回归，并使用它来研究具有不同偏差-方差特性的模型
+在作业的前半部分，将使用正则化线性回归利用水库水位的变化来预测从大坝流出的水量。在下半部分中，您将经历一些调试学习算法的诊断，并检查偏差和方差的影响。
+在开始作业之前进行初始化：clear ; close all; clc
+
+1. Loading and Visualizing Data：加载并可视化数据
+%加载数据： Load Training Data
+load ('ex5data1.mat');
+%求出样本大小
+m = size(X, 1);
+
+首先，我们将可视化包含水位x和流出大坝水量y变化的历史记录的数据集
+% 绘制训练集：Plot training data
+plot(X, y, 'rx', 'MarkerSize', 10, 'LineWidth', 1.5);
+xlabel('Change in water level (x)');
+ylabel('Water flowing out of the dam (y)');
+
+
+2.正则化线性回归的代价函数：Regularized Linear Regression Cost 
+theta = [1 ; 1];
+J = linearRegCostFunction([ones(m, 1) X], y, theta, 1);
+% 代价函数代码在linearRegCostFunction.m文件中
+%λ是控制正则化程度的正则化参数(因此，有助于防止过拟合)。正则化项对总代价j施加惩罚。随着模型参数θj的大小增加，惩罚也增加。注意，不应该正则化θ0项。(在Octave/MATLAB中，θ0项表示为(1)，因为Octave/MATLAB中的索引从1开始)。
+%现在应该完成文件linearRegCostFunction.m中的代码
+
+
+
+3.计算正则化线性回归的代价函数的梯度：Regularized Linear Regression Gradient
+%注意：偏置项不用正则化
+theta = [1 ; 1];
+[J, grad] = linearRegCostFunction([ones(m, 1) X], y, theta, 1);
+% 计算代价函数梯度的代码在linearRegCostFunction.m文件中
+
+
+4.训练线性回归模型得到最优的参数theta：Train Linear Regression 
+采用高级优化函数最小化代价函数
+%  Train linear regression with lambda = 0
+%在这一部分中，我们将正则化参数λ设为零。因为我们目前对线性回归的实现是试图拟合一个二维θ，正则化对这样低维的θ没有多大帮助。在练习的后面部分，您将使用正则化多项式回归
+lambda = 0;
+[theta] = trainLinearReg([ones(m, 1) X], y, lambda);
+
+%此时得到
+%  Plot fit over the data
+plot(X, y, 'rx', 'MarkerSize', 10, 'LineWidth', 1.5);
+xlabel('Change in water level (x)');
+ylabel('Water flowing out of the dam (y)');
+hold on;
+plot(X, [ones(m, 1) X]*theta, '--', 'LineWidth', 2)
+hold off;
+%数据是非线性的，所以拟合的不是很好
+
+
+5.实现线性回归的学习曲线：Learning Curve for Linear Regression 
+% 在文件learningCurve.m中实现学习曲线函数
+% 由于模型是欠拟合的，我们应该得到的是一个高偏差的学习曲线
+%在学习曲线函数中，我们要计算训练误差和交叉验证误差error_train和error_val，error_train (i)，error_val(i)应该给出错误对i个例子进行训练后得到的误差
+%计算误差就是计算训练集和交叉验证集的代价函数
+%代价函数计算需要lambda，theta，m,X,y
+%lambda，X，y，m都给出来了，此时需要计算每个i的theta
+%使用for循环来计算误差
+%这里训练集误差与交叉验证集误差都是不包含正则化项的，但是这里的lambda = 0
+%相当于不包含正则化项
+for i=1:m
+	theta = trainLinearReg(X(1:i,:),y(1:i),lambda);
+	error_train(i) = linearRegCostFunction(X(1:i,:),y(1:i),theta,0);
+	error_val(i) = linearRegCostFunction(Xval, yval, theta,0);
+endfor
+%现在就得到了随着训练样本的变化，训练误差和交叉验证集误差的值了
+%接下来在ex5中调用LearningCurve函数并绘制学习曲线
+lambda = 0;
+[error_train, error_val] = ...
+    learningCurve([ones(m, 1) X], y, ...
+                  [ones(size(Xval, 1), 1) Xval], yval, ...
+                  lambda);
+
+plot(1:m, error_train, 1:m, error_val);
+title('Learning curve for linear regression')
+legend('Train', 'Cross Validation')
+xlabel('Number of training examples')
+ylabel('Error')
+axis([0 13 0 150])
+%绘制出来的学习曲线是高偏差模型，也就是说上面的欠拟合其实就是高偏差
+%对于这种欠拟合的情形，可以使用多项式回归来解决
+
+
+6.使用多项式回归来拟合数据：Feature Mapping for Polynomial Regression 
+%要实现多项式回归，首先要进行特征映射，在polyFeatures.m文件中
+%将特征X映射为X的p次幂，将m×1的特征向量映射为m×p的特征矩阵
+%   X_poly(i, :) = [X(i) X(i).^2 X(i).^3 ...  X(i).^p];
+%将一个一维的特征向量映射为多维的特征矩阵，对于某一个特征x1，映射为（x1，x1^2，x1^3，...，x1^p）
+for i=1:p
+	X_poly(:,i) =  X(:) .^i;
+endfor
+%通过特征映射，我们就可以得到一个线性回归模型，其中特征是原始值(水位)的各种幂次
+接下来需要进行特征放缩的函数，当p = 8时，特征x^8显然远大于x，在文件featureNormalize.m中对特征进行放缩
+%求出每一个特征向量的均值mu
+mu = mean(X);
+%bsxfun()函数的功能:两个数组间元素逐个计算的二值操作
+%进行的操作有@后面的操作决定，X - mu
+X_norm = bsxfun(@minus, X, mu);
+
+%求特征向量的方差
+sigma = std(X_norm);
+%完成均值归一化函数
+X_norm = bsxfun(@rdivide, X_norm, sigma);
+
+%ex5中调用特征映射与均值归一化函数，将数据集的特征进行特征映射和均值归一，得到映射后的特征均值mu和特征标准偏差sigma
+%然后利用得到的特征均值mu和特征标准偏差sigma来对训练集，交叉验证集的特征都进行均值归一化
+%也就是说根据总的数据集来求均值mu和标准偏差sigma，而不是根据训练集和交叉验证集分别计算出来的mu和sigma进行均值归一化
+p = 8;     %多项式最高幂次
+% Map X onto Polynomial Features and Normalize
+X_poly = polyFeatures(X, p);
+[X_poly, mu, sigma] = featureNormalize(X_poly);  % Normalize
+X_poly = [ones(m, 1), X_poly];                   % Add Ones    %增加偏置项
+
+% Map X_poly_test and normalize (using mu and sigma)
+X_poly_test = polyFeatures(Xtest, p);
+X_poly_test = bsxfun(@minus, X_poly_test, mu);
+X_poly_test = bsxfun(@rdivide, X_poly_test, sigma);
+X_poly_test = [ones(size(X_poly_test, 1), 1), X_poly_test];         % Add Ones   %增加偏置项
+
+% Map X_poly_val and normalize (using mu and sigma)
+X_poly_val = polyFeatures(Xval, p);
+X_poly_val = bsxfun(@minus, X_poly_val, mu);
+X_poly_val = bsxfun(@rdivide, X_poly_val, sigma);
+X_poly_val = [ones(size(X_poly_val, 1), 1), X_poly_val];           % Add Ones    %增加偏置项
+%此时就完成了训练集和交叉验证集的特征映射与均值归一化
+
+
+
+7.实现多项式回归的学习曲线：Learning Curve for Polynomial Regression 
+%即使我们的特征向量中有多项式项，我们仍然在解决一个线性回归优化问题。多项式项已经变成了我们可以用于线性回归的特征
+%下面训练多项式回归模型，得到参数theta，依旧是使lambda = 0，等于0才有可能出现过拟合，不然学习曲线就没有意义了
+lambda = 0;
+[theta] = trainLinearReg(X_poly, y, lambda);
+
+%绘制多项式回归的数据以及拟合情况
+% Plot training data and fit
+figure(1);
+plot(X, y, 'rx', 'MarkerSize', 10, 'LineWidth', 1.5);    %绘制多项式数据点
+plotFit(min(X), max(X), mu, sigma, theta, p);           %绘制多项式拟合曲线
+xlabel('Change in water level (x)');
+ylabel('Water flowing out of the dam (y)');
+title (sprintf('Polynomial Regression Fit (lambda = %f)', lambda));
+%发现拟合的很好
+
+%计算多项式回归的训练集、交叉验证集的误差，并根据误差求得多项式回归的学习曲线
+figure(2);
+[error_train, error_val] = ...
+    learningCurve(X_poly, y, X_poly_val, yval, lambda);      %计算多项式回归的训练集、交叉验证集的误差
+plot(1:m, error_train, 1:m, error_val);                                 %绘制多项式回归的学习曲线，X是一个列向量
+
+title(sprintf('Polynomial Regression Learning Curve (lambda = %f)', lambda));
+xlabel('Number of training examples')
+ylabel('Error')
+axis([0 13 0 100])
+legend('Train', 'Cross Validation')
+
+%通过学习曲线我们可以看到训练集误差一直为0，而交叉验证集误差从高到低在下降
+%在某一部分图像发现当训练集误差为0时，交叉验证机误差特别大，说明这个非正则化模型发生了过拟合，使lambda不等于0进行正则化
+%接下来需要利用交叉验证集来选择一个比较好的lambda
+
+
+8.在交叉验证集上选择正则化参数lambda：Validation for Selecting Lambda 
+%现在将实现验证集曲线，用来在验证集中测试%lambda的各种值。然后，使用它来选择“最佳”lambda值
+%实现validationCurve函数，在validationCurve.m文件中，这个函数会返回使用的lambda值向量，对于lambda的训练集，交叉验证集误差向量
+%使用不同的lambda来训练模型，得到不同的训练集，交叉验证集误差
+%通过绘制交叉验证集的误差曲线来选择lambda
+lambda_vec = [0 0.001 0.003 0.01 0.03 0.1 0.3 1 3 10]';
+for i = 1:length(lambda_vec)
+	lambda = lambda_vec(i);
+	theta = trainLinearReg(X,y,lambda);                                  %此时不需要看随着训练样本的增加，误差的变化，所以使用整个训练集来训练参数theta
+	error_train(i)=linearRegCostFunction(X,y,theta,0);             %计算训练集误差和交叉验证集误差时不能进行正则化，所以置lambda = 0
+	error_val(i) = linearRegCostFunction(Xval, yval, theta,0);
+endfor
+%此时就完成了交叉验证集误差函数
+%接下来需要在ex5中调用该函数并绘制交叉验证集误差关于正则化参数lambda的曲线
+[lambda_vec, error_train, error_val] = ...
+    validationCurve(X_poly, y, X_poly_val, yval);
+
+close all;         %清理掉之前绘制的图
+plot(lambda_vec, error_train, lambda_vec, error_val);        %绘制交叉验证集误差曲线
+legend('Train', 'Cross Validation');
+xlabel('lambda');
+ylabel('Error');
+%绘制图像后，发现lambda = 3时是最好的参数选择
+%此时就完成了本次编程作业
+%在使用交叉验证集选择最佳λ值之后，我们可以在测试集上评估模型，以估计模型在实际未见数据上的表现如何
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
