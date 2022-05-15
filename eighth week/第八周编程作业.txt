@@ -1,0 +1,403 @@
+在本练习中，将实现K-means聚类算法并应用它来压缩图像
+在第二部分中，您将使用主成分分析来寻找人脸图像的低维表示
+相关文件：
+ex7.m - Octave/MATLAB script for the first exercise on K-means
+ex7 pca.m - Octave/MATLAB script for the second exercise on PCA
+ex7data1.mat - Example Dataset for PCA
+ex7data2.mat - Example Dataset for K-means
+ex7faces.mat - Faces Dataset
+bird small.png - Example Image
+displayData.m - Displays 2D data stored in a matrix
+drawLine.m - Draws a line over an exsiting figure
+plotDataPoints.m - Initialization for K-means centroids
+plotProgresskMeans.m - Plots each step of K-means as it proceeds
+runkMeans.m - Runs the K-means algorithm
+submit.m - Submission script that sends your solutions to our servers
+[*] pca.m - Perform principal component analysis
+[*]  projectData.m - Projects a data set into a lower dimensional space
+[*] recoverData.m - Recovers the original data from the projection
+[*]  findClosestCentroids.m - Find closest centroids (used in K-means)
+[*]  computeCentroids.m - Compute centroid means (used in K-means)
+[*]  kMeansInitCentroids.m - Initialization for K-means centroids
+带*号的就是要完成的代码文件
+在练习的第一部分中，将使用脚本ex7.m，在练习的第二部分，将使用ex7 pca.m，这两个脚本将会调用我们所写的程序，实现K-means聚类算法并应用它来压缩图像
+
+首先进行第一部分练习：
+一、K-means Clustering
+在这一部分，将实现K-means算法并将其用于图像压缩，我们将首先从一个示例2D数据集开始，它将帮助我们直观地了解K-means算法的工作原理 
+之后，我们将使用K-means算法进行图像压缩，将图像中出现的颜色的数量减少到只出现在该图像中最常见的颜色
+在开始作业之前进行初始化：clear ; close all; clc
+
+1.找到最近的聚类中心：Find Closest Centroids 
+%为了帮助实现K-Means算法，我们将学习算法分为两个函数：findClosestCentroids和computeCentroids
+%这里我们需要在findClosestCentroids.m文件中实现findClosestCentroids函数的代码，也就是计算每个样本属于哪个聚类中心
+%函数返回每个样本所属的聚类中心索引向量
+%X每一行是一个样本，设共有m个样本，idx是一个m×1的向量
+%第二个参数centroids是传进来的聚类中心
+function idx = findClosestCentroids(X, centroids)
+%有K个聚类中心
+K = size(centroids, 1);
+m = size(X,1);
+%要求使用for循环实现
+for i = 1:m
+	[val,idx(i)] = min(sum(((X(i,:) - centroids) .^ 2)'));
+endfor
+
+在ex7.m中，加载训练集数据，并初始化聚类中心，假设有k = 3个聚类中心
+% Load an example dataset that we will be using
+load('ex7data2.mat');
+
+% Select an initial set of centroids
+K = 3; % 3 Centroids
+initial_centroids = [3 3; 6 2; 8 5];
+%使用这个初始化的聚类中心，找到每个样本的最近聚类中心的索引
+idx = findClosestCentroids(X, initial_centroids);
+%此时我们就知道了每个样本应该分给哪个聚类中心
+
+
+
+2.计算均值：Compute Means 
+%对每个质心重新计算分配给它的点的平均值，计算到的平均值就是新的聚类中心
+%现在应该在computeCentroids.m文件中完成computeCentroids函数的代码
+%通过计算分配给每个聚类中心的样本均值，返回新的聚类中心矩阵
+%参数1是样本X，参数2是每个样本对应的聚类中心的索引idx，参数3是聚类中心的个数K
+%聚类矩阵centroids行数就是聚类个数K，列数就是样本特征个数n
+function centroids = computeCentroids(X, idx, K)
+
+[m n] = size(X);
+%总共K个聚类，所以循环从1到K
+for i = 1:K
+	temp = X(idx == i,:);
+	a = size(temp,1);
+	centroids(i, :) = sum(temp)/a;
+endfor
+
+%然后在ex7.m中调用该函数
+centroids = computeCentroids(X, idx, K);
+
+3.进行K-means聚类：K-Means Clustering 
+%完成上述两个学习算法函数，现在在数据集上进行K-means聚类
+%加载数据样本
+% Load an example dataset
+load('ex7data2.mat');
+
+%设置聚类中心个数
+% Settings for running K-Means
+K = 3;
+max_iters = 10;
+%为了一致性，我们自己设置好初始的聚类中心，但是一般时候我们往往可以随机初始化聚类中心，正如kMeansInitCentroids.m文件中描述的
+%设置初始聚类中心
+initial_centroids = [3 3; 6 2; 8 5];
+
+%运行K-Means算法，算法代码在 runkMeans.m文件中
+%第一个参数是样本矩阵X，每一行代表一个样本数据，第二个参数是初始化的聚类中心initial_centroids
+%第三个参数是K-Means算法的迭代次数max_iters，第四个参数是true/false 的标志位，表示函数是否应该在学习过程中绘制其进度，默认值是false
+function [centroids, idx] = runkMeans(X, initial_centroids, max_iters, plot_progress)
+% Plot the data if we are plotting progress
+if plot_progress
+    figure;
+    hold on;
+end
+
+% Initialize values
+[m n] = size(X);
+K = size(initial_centroids, 1);
+centroids = initial_centroids;
+previous_centroids = centroids;
+idx = zeros(m, 1);
+
+% Run K-Means
+for i=1:max_iters
+    
+    % Output progress
+    fprintf('K-Means iteration %d/%d...\n', i, max_iters);
+    if exist('OCTAVE_VERSION')
+        fflush(stdout);      %强制输出，防止数据被覆盖
+    end
+    
+    % For each example in X, assign it to the closest centroid
+    %找到每个样本应归属的聚类中心
+    idx = findClosestCentroids(X, centroids);
+    
+    % Optionally, plot progress here
+    %绘制每次迭代的图像，图像绘制代码在plotProgresskMeans.m中，每次绘制需要把上一次的聚类中心绘制下来，然后在本次聚类中心与上次聚类中心间画一条移动的线
+    if plot_progress
+        %使用plotProgresskMeans函数和plotDataPoints函数，使用plotDataPoints函数绘制样本散点图，plotProgresskMeans函数绘制聚类中心，并在新旧聚类间中心画一条线
+        plotProgresskMeans(X, centroids, previous_centroids, idx, K, i);   
+        %更新previous_centroids
+        previous_centroids = centroids;
+        fprintf('Press enter to continue.\n');
+        pause;
+    end
+    
+    % Given the memberships, compute new centroids
+    %更新聚类中心
+    centroids = computeCentroids(X, idx, K);
+end
+
+% Hold off if we are plotting progress
+if plot_progress
+    hold off;
+end
+
+%经过迭代，聚类中心已经处于一个很合适的位置
+%接下来，可以使用K-means算法来压缩图片了
+
+
+4.基于像素的K-means聚类：K-Means Clustering on Pixels 
+%使用K-means算法选择用于表示压缩图像的16种颜色。具体地说，把原始图像中的每个像素作为数据示例，并使用K-means算法在三维RGB空间中找到最佳分组(聚类)像素的16种颜色。
+%一旦计算出图像上的簇质心，就可以使用这16种颜色来替换原始图像中的像素
+%我们的图像包含数千种颜色，需要把颜色的数量减少到16种
+%设置16个聚类中心进行聚类，首先对图像中像素的颜色运行K-Means，然后将每个像素映射到最近的聚类中心上
+%在kMeansInitCentroids.m文件中实现kMeansInitCentroids函数，在样本数据集中随机选择K个样本作为聚类中心
+%randperm(size(X, 1))随机打乱1~size(X, 1)之间的数
+randidx = randperm(size(X, 1));  
+%在打乱的数字中选择前K个作为样本索引
+centroids = X(randidx(1:K), :);
+
+%加载图片
+%A= imread(filename.fmt)      根据文件名filename读取灰度获彩色图像。返回的数组A包含图像数据
+%将图片数据储存为double类型
+A = double(imread('bird_small.png'));
+%特征放缩，让所有值都处在0~1之间
+A = A / 255; 
+%获得图像数据矩阵大小
+img_size = size(A);
+%将图像重新塑造成一个Nx3矩阵，其中N =像素个数，每行将包含红色、绿色和蓝色像素值
+%假设A是128×128×3阶矩阵，则变成矩阵X：16384×3阶矩阵，后面的×3是像素RBG值，A中128×128可以在坐标中确定16384个像素点，X把16384个像素点变成一列
+X = reshape(A, img_size(1) * img_size(2), 3);
+
+%在X上运行K-means均值算法，迭代10次，可以尝试迭代更多次
+K = 16; 
+max_iters = 10;
+
+%调用kMeansInitCentroids函数随机初始化聚类中心
+initial_centroids = kMeansInitCentroids(X, K);
+
+%运行K-means
+[centroids, idx] = runkMeans(X, initial_centroids, max_iters);
+%得到聚类中心索引以及聚类中心矩阵
+
+
+5.压缩图片：Image Compression 
+%找到最终的聚类中心后，通过 findClosestCentroids函数，得到idx，用idx表示图像X
+% Find closest cluster members
+idx = findClosestCentroids(X, centroids);
+%然后通过将idx映射到cnetroids恢复图像
+X_recovered = centroids(idx,:);
+%也就是说，到目前为止，我们把每个聚类中的数据都用聚类中心表示
+
+%再将得到的X_recovered转化为N×N×3类型的图像表示：
+X_recovered = reshape(X_recovered, img_size(1), img_size(2), 3);
+
+%最后，根据A绘制原图，根据X_recovered绘制压缩后的图片
+% Display the original image 
+subplot(1, 2, 1);
+imagesc(A); 
+title('Original');
+
+% Display compressed image side by side
+subplot(1, 2, 2);
+imagesc(X_recovered)
+title(sprintf('Compressed, with %d colors.', K));
+
+
+
+
+首先进行第二部分练习：
+我们将使用主成分分析(PCA)来执行降维。我们将首先使用示例2D数据集进行实验，以直观地了解PCA的工作方式，然后在一个包含5000个人脸图像数据集的更大数据集上使用它
+在开始作业之前进行初始化：clear ; close all; clc
+
+1.加载样本数据集：Load Example Dataset  
+%使用一个容易可视化的小数据集：
+load ('ex7data1.mat');
+
+%可视化数据
+%  Visualize the example dataset
+plot(X(:, 1), X(:, 2), 'bo');
+axis([0.5 6.5 2 8]); axis square;
+
+
+2.进行主成分分析：Principal Component Analysis
+%在进行主成分分析之前，先进行特征的均值归一化，代码在 featureNormalize.m文件中
+[X_norm, mu, sigma] = featureNormalize(X);     %均值归一化在之前的例子中就写过
+
+%运行pca，在pca.m中完成代码
+%计算协方差矩阵A
+A = (X'*X)/m;
+%通过svd函数求解特征向量
+[U, S, V] = svd(A);
+
+
+%通过特征均值归一化得到的特征均值mu，以数据的均值为中心画特征向量。这些线显示数据集中最大变化的方向
+hold on;
+drawLine(mu, mu + 1.5 * S(1,1) * U(:,1)', '-k', 'LineWidth', 2);
+drawLine(mu, mu + 1.5 * S(2,2) * U(:,2)', '-k', 'LineWidth', 2);
+hold off;
+
+3.降维：Dimension Reduction
+%现在应该实现投影步骤，将数据映射到前k个特征向量。然后，代码将在这个降维空间中绘制数据。
+%在projectData.m文件中计算降维后的数据表示
+Ureduce = U(:,1:K);
+Z = X * Ureduce;
+
+%绘制均值归一化后的数据点
+plot(X_norm(:, 1), X_norm(:, 2), 'bo');
+axis([-4 3 -4 3]); axis square
+
+% 将二维数据投影到一维
+K = 1;
+Z = projectData(X_norm, U, K);
+
+%_rec = RECOVERDATA(Z, U, K)恢复已缩减到K维的原始数据的近似值。它返回X_rec中的近似重构，代码在recoverData.m文件中
+X_rec  = recoverData(Z, U, K);
+
+%  Draw lines connecting the projected points to the original points
+hold on;
+plot(X_rec(:, 1), X_rec(:, 2), 'ro');
+for i = 1:size(X_norm, 1)
+    drawLine(X_norm(i,:), X_rec(i,:), '--k', 'LineWidth', 1);
+end
+hold off
+%此时就完成了PCA的函数代码编写工作
+
+
+
+4.加载脸部数据：Loading and Visualizing Face Data 
+%加载脸部数据集：
+load ('ex7faces.mat')
+%展示前100个数据
+displayData(X(1:100, :));
+
+
+
+5.脸部数据使用PCA
+%行PCA并可视化特征向量，在这种情况下就是特征脸，我们显示前36个特征脸
+%首先对特征进行均值归一化
+[X_norm, mu, sigma] = featureNormalize(X);
+
+%  对数据运行PCA
+[U, S] = pca(X_norm);
+
+%  将前36个向量进行可视化
+displayData(U(:, 1:36)');
+
+6.脸部特征降维
+K = 100;
+Z = projectData(X_norm, U, K);
+
+
+7.PCA降维后进行可视化：Visualization of Faces after PCA Dimension Reduction 
+%只使用映射后的K维向量进行可视化
+K = 100;
+X_rec  = recoverData(Z, U, K);
+
+%展示正常的均值化数据图像
+% Display normalized data
+subplot(1, 2, 1);
+displayData(X_norm(1:100,:));
+title('Original faces');
+axis square;
+
+%展示降维重构后的数据图像
+% Display reconstructed data from only k eigenfaces
+subplot(1, 2, 2);
+displayData(X_rec(1:100,:));
+title('Recovered faces');
+axis square;
+
+%将两者进行比较
+
+
+
+8.可选练习-PCA用于可视化：Optional (ungraded) Exercise: PCA for Visualization 
+%三维或更大的空间中可视化数据集是很麻烦的。因此，即使以丢失一些信息为代价，通常也希望只在2D中显示数据。在实践中，PCA经常用于降低数据的维数以实现可视化目的
+close all; close all; clc
+
+% Reload the image from the previous exercise and run K-Means on it
+% For this to work, you need to complete the K-Means assignment first
+A = double(imread('bird_small.png'));
+
+% If imread does not work for you, you can try instead
+%   load ('bird_small.mat');
+
+A = A / 255;
+img_size = size(A);
+X = reshape(A, img_size(1) * img_size(2), 3);
+K = 16; 
+max_iters = 10;
+initial_centroids = kMeansInitCentroids(X, K);
+[centroids, idx] = runkMeans(X, initial_centroids, max_iters);
+
+%上面是对图片数据运行K-means算法，下面使用散点图绘制出三维数据点
+%  Sample 1000 random indexes (since working with all the data is
+%  too expensive. If you have a fast computer, you may increase this.
+sel = floor(rand(1000, 1) * size(X, 1)) + 1;
+
+%  Setup Color Palette
+palette = hsv(K);
+colors = palette(idx(sel), :);
+
+%  Visualize the data and centroid memberships in 3D
+figure;
+scatter3(X(sel, 1), X(sel, 2), X(sel, 3), 10, colors);
+title('Pixel dataset plotted in 3D. Color shows centroid memberships');
+fprintf('Program paused. Press enter to continue.\n');
+pause;
+%此时已将绘制好了3D数据图，下面使用PCA绘制2D数据图
+%% === Part 8(b): Optional (ungraded) Exercise: PCA for Visualization ===
+% Use PCA to project this cloud to 2D for visualization
+
+% Subtract the mean to use PCA
+[X_norm, mu, sigma] = featureNormalize(X);
+
+% PCA and project the data to 2D
+[U, S] = pca(X_norm);
+Z = projectData(X_norm, U, 2);
+
+% Plot in 2D
+figure;
+plotDataPoints(Z(sel, :), idx(sel), K);
+title('Pixel dataset plotted in 2D, using PCA for dimensionality reduction');
+fprintf('Program paused. Press enter to continue.\n');
+pause;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
