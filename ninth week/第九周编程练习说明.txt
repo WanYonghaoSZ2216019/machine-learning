@@ -1,3 +1,4 @@
+对于第二阶段推荐系统的练习，由于电影评分数据过于庞大，使用Octave会非常慢，要执行很久，建议使用MATLAB执行
 在本练习中，您将实现异常检测算法，并应用它来检测网络上出现故障的服务器。在第二部分中，您将使用协作过滤来构建一个电影推荐系统
 ex8.m - Octave/MATLAB script for first part of exercise
 ex8 cofi.m - Octave/MATLAB script for second part of exercise
