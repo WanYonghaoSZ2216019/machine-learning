@@ -1,0 +1,421 @@
+在本练习中，您将实现异常检测算法，并应用它来检测网络上出现故障的服务器。在第二部分中，您将使用协作过滤来构建一个电影推荐系统
+ex8.m - Octave/MATLAB script for first part of exercise
+ex8 cofi.m - Octave/MATLAB script for second part of exercise
+ex8data1.mat - First example Dataset for anomaly detection
+ex8data2.mat - Second example Dataset for anomaly detection
+ex8 movies.mat - Movie Review Dataset
+ex8 movieParams.mat - Parameters provided for debugging
+multivariateGaussian.m - Computes the probability density function
+for a Gaussian distribution
+visualizeFit.m - 2D plot of a Gaussian distribution and a dataset
+checkCostFunction.m - Gradient checking for collaborative filtering
+computeNumericalGradient.m - Numerically compute gradients
+fmincg.m - Function minimization routine (similar to fminunc)
+loadMovieList.m - Loads the list of movies into a cell-array
+movie ids.txt - List of movies
+normalizeRatings.m - Mean normalization for collaborative filtering
+submit.m - Submission script that sends your solutions to our servers
+[* ] estimateGaussian.m - Estimate the parameters of a Gaussian distribution with a diagonal covariance matrix
+[* ] selectThreshold.m - Find a threshold for anomaly detection
+[* ] cofiCostFunc.m - Implement the cost function for collaborative filtering
+带*号的就是我们要完成的
+
+
+首先完成第一部分：异常检测
+一、异常检测
+在本练习中，我们将实现一个异常检测算法来检测服务器计算机中的异常行为。特征是测量每个服务器的响应的吞吐量(mb/s)和延迟(ms)。
+当服务器运行时，我们收集了m = 307个关于它们如何工作的示例，因此有一个未标记的数据集{x(1)，……x (m)}。
+这些示例中的绝大多数都是服务器正常运行的“正常”(非异常)示例，但也可能有一些服务器在此数据集中运行异常的示例。
+使用高斯模型来检测数据集中的异常示例。我们将首先从一个2D数据集开始，这可以让我们可视化算法正在做什么。
+在这个数据集上，我们将拟合一个高斯分布，然后找到概率非常低的值，认为其是异常的。在此之后，再把异常检测算法应用到一个具有多个维度的更大数据集
+
+在进行联系之前，首先要进行初始化clear ; close all; clc
+
+
+1.加载并可视化样本数据集：Load Example Dataset  
+%我们的示例由跨几台机器的2个网络服务器统计信息组成:每台机器的延迟和吞吐量。这个练习将帮助我们找到可能有故障(或速度非常快)的机器
+%加载数据，加载后我们的环境中就有了样本数据集X，Xval，yval（Xval，yval是交叉验证集数据）
+load('ex8data1.mat');
+
+%可视化样本数据集
+plot(X(:, 1), X(:, 2), 'bx');
+axis([0 30 0 30]);
+xlabel('Latency (ms)');
+ylabel('Throughput (mb/s)');
+
+
+2.评估样本数据集：Estimate the dataset statistics
+%在这个练习中，我们假设数据集是一个高斯分布，如果不是高斯分布，可以使用对数函数的方法近似得到高斯分布
+%我们首先估计我们假设的高斯分布的参数，然后计算每个点的概率，然后将整体分布和每个点在该分布中的位置可视化
+%计算高斯分布参数mu和sigma^2
+%在文件estimateGaussian.m中完成参数计算函数，mu是每个特征的均值。sigma2是特征的方差
+mu = sum(X) / m;
+sigma2 = sum((X - mu) .^ 2) / m;
+
+%然后ex8.m就会调用
+[mu sigma2] = estimateGaussian(X);
+
+%在文件multivariateGaussian.m中计算多元高斯的概率，计算样本X在多元高斯分布下以mu和Sigma2为参数的概率密度函数
+%计算样本X在多元高斯分布下以mu和Sigma2为参数的概率密度函数
+%多元高斯概率函数的数学公式在吴恩达机器学习笔记中有
+%k是特征的数量
+k = length(mu);
+
+%如果Sigma2为向量，则将Sigma2作为主对角线元素，形成协方差矩阵Sigma2
+%如果Sigma2就是矩阵，那么Sigma2就是协方差矩阵，不执行下列if代码
+if (size(Sigma2, 2) == 1) || (size(Sigma2, 1) == 1)
+    Sigma2 = diag(Sigma2);
+end
+
+%利用bsxfun函数计算X-mu，每个样本都减去mu
+%此时的X是每个样本特征都减去对应的mu值
+X = bsxfun(@minus, X, mu(:)');
+
+%sum中的参数为2，表示对每行求和，得到列向量
+%det用于求矩阵的行列式
+%这个公式在笔记中有
+p = (2 * pi) ^ (- k / 2) * det(Sigma2) ^ (-0.5) * exp(-0.5 * sum(bsxfun(@times, X * pinv(Sigma2), X), 2));
+
+%此时我们就得到了多元高斯函数的概率密度函数
+%绘制数据概率分布图，投影成一维的等高线图
+visualizeFit(X,  mu, sigma2);
+xlabel('Latency (ms)');
+ylabel('Throughput (mb/s)');
+
+
+3.检测出异常
+%接下来我们使用交叉验证集发现一个好的阈值，由估计的高斯分布概率给出
+pval = multivariateGaussian(Xval, mu, sigma2);
+%使用 selectThreshold.m文件中的函数挑选阈值，返回挑选的阈值以及F1-score（用以评估阈值）
+[epsilon F1] = selectThreshold(yval, pval);
+% selectThreshold函数实现：
+stepsize = (max(pval) - min(pval)) / 1000;
+for epsilon = min(pval):stepsize:max(pval)
+	%pval中小于epsilon为异常值，predictions对应位置为1
+	predictions = (pval < epsilon);
+	
+	tp = sum(predictions(find(yval == 1)) == 1);
+	fp = sum(predictions(find(yval == 0)) == 1);
+	fn = sum(predictions(find(yval == 1)) == 0);
+ 
+	prec = tp / (tp + fp);
+	rec = tp / (tp + fn);
+	F1 = 2 * prec * rec / (prec + rec);
+	%使用bestF1和bestEpsilon标记最好的Epsilon和F1，每次循环都更新
+          if F1 > bestF1
+               bestF1 = F1;
+               bestEpsilon = epsilon;
+         end
+end
+
+%此时得到比较合适的判断异常值的epsilon值
+%使用该值判断异常
+outliers = find(p < epsilon);
+%outliers就是异常点，在图中用红圈画出圈出异常点
+hold on
+plot(X(outliers, 1), X(outliers, 2), 'ro', 'LineWidth', 2, 'MarkerSize', 10);
+hold off
+
+
+
+
+4.检测多维度异常值：Multidimensional Outliers 
+%我们现在将使用前一部分的代码，并将其应用于一个更难的问题，在这个问题中，会使用更多的特征描述每个数据点，当然只有一些特特征表明一个点是否是离群值
+%相比于上面只使用两个特征来描述计算机属性，在这个数据集中，每个示例由11个特征描述，捕获计算服务器的更多属性
+%该脚本将使用我们之前的代码来估计高斯参数(µi和σi2)，评估用于估计高斯参数的训练数据X和交叉验证集Xval的概率。最后，使用selectThreshold查找最佳阈值ε。
+%我们应该看到值epsilon约为1.38e-18，并发现了117个异常
+%首先加载新的数据集，环境中就有了X，Xval，yval
+load('ex8data2.mat');
+%求出大数据集上的mu与sigma2的值
+[mu sigma2] = estimateGaussian(X);
+%使用多元高斯概率函数训练数据集，求出各数据的概率分布
+p = multivariateGaussian(X, mu, sigma2);
+
+%计算交叉验证集的数据概率分布
+pval = multivariateGaussian(Xval, mu, sigma2);
+
+%找到最佳的epsilon值
+epsilon F1] = selectThreshold(yval, pval);
+
+%找到异常点的个数
+epsilon F1] = selectThreshold(yval, pval);
+
+
+
+
+第二个练习中，我们将实现协作过滤学习算法，并将其应用于电影评级数据集，这个数据集由1到5的评级组成。数据集有n_u = 943个用户，n_m = 1682个电影
+
+1.加载电影评分数据集并可视化数据矩阵：Loading movie ratings dataset 
+%加载电影评分数据
+load ('ex8_movies.mat');
+%  Y is a 1682x943 matrix, containing ratings (1-5) of 1682 movies on 943 users
+%  R is a 1682x943 matrix, where R(i,j) = 1 if and only if user j gave a rating to movie i
+ 
+%通过加载得到的两个数据矩阵，我们可以得到每个电影的平均评分，比如电影1的平均评分为：
+fprintf('Average rating for movie 1 (Toy Story): %f / 5\n\n', mean(Y(1, R(1, :))));
+
+%我们可以通过imagesc绘图来“可视化”评级矩阵
+%imagesc函数 这个函数的功能是以图像方式显示矩阵,能够更直观的观测矩阵
+imagesc(Y);      
+ylabel('Movies');
+xlabel('Users');
+
+
+2.计算协同过滤的代价函数：Collaborative Filtering Cost Function 
+%接下来需要实现协作过滤的成本函数
+%完成cofiCostFunc.m 中的代码，并且返回代价J以及梯度grad
+function [J, grad] = cofiCostFunc(params, Y, R, num_users, num_movies, num_features, lambda)
+%从参数params中得到每部电影的特征值，将每部电影的特征值按行写入矩阵X，1:num_movies*num_features就是所有电影的特征，X矩阵的行为电影数量，列为每部电影特征数量
+X = reshape(params(1:num_movies*num_features), num_movies, num_features);
+将每个用户的参数向量按行写入矩阵Theta，参数中num_movies*num_features+1:end就是所有的评分，Theta为用户喜好参数，矩阵行数就是用户数量，列为每部电影的特征
+%用户的喜好参数与电影特征数量一致
+Theta = reshape(params(num_movies*num_features+1:end), num_users, num_features);
+%.*R将用户没有评分的电影都变成0，这些都不用计入代价
+%计算得到每个用户对每部已经评价过的电影的预测评价，再计算与真实评价之间的误差，求和就是代价了
+J = sum(sum(((X * Theta') .* R - Y .* R) .^ 2)) / 2;
+
+%计算梯度X_grad，Theta_grad 
+%X_grad就是计算代价函数J关于每项X的偏导数
+X_grad = ((X * Theta') .* R - Y .* R) * Theta;
+
+%Theta_grad就是计算代价函数J关于每项theta的偏导数
+%如果不理解可以举个例子进行计算
+Theta_grad = ((X * Theta') .* R - Y .* R)' * X;
+grad = [X_grad(:); Theta_grad(:)];
+
+
+%为了调试代价函数，首先加载一组已经训练好的权重
+load ('ex8_movieParams.mat');
+
+%为了使代码跑的更快，只从数据中去除一部分来进行计算并验证代价
+num_users = 4; num_movies = 5; num_features = 3;
+X = X(1:num_movies, 1:num_features);
+Theta = Theta(1:num_users, 1:num_features);
+Y = Y(1:num_movies, 1:num_users);
+R = R(1:num_movies, 1:num_users);
+
+%计算并验证上述数据的代价
+J = cofiCostFunc([X(:) ; Theta(:)], Y, R, num_users, num_movies,num_features, 0);
+
+
+3.计算协同过滤的梯度：Collaborative Filtering Gradient 
+%在cofiCostFunc.m 中我们已经计算了协同过滤的梯度函数
+%接下来需要在checkCostFunction.m文件中完成梯度检查函数的代码
+#这个函数会创建一个协作过滤问题来检查我们的的成本函数和梯度，它将输出由我们的的代码产生的分析梯度和数值梯度(使用computeNumericalGradient计算)这两个梯度
+%在computeNumericalGradient.m文件中将会完成数值梯度的
+
+% 如果没传参lambda，则将lambda设置为0
+if ~exist('lambda', 'var') || isempty(lambda)
+    lambda = 0;
+end
+
+%创建一个小的协同过滤问题数据，用来调试程序
+%X_t ，Theta_t用来生成真实的评分
+X_t = rand(4, 3);
+Theta_t = rand(5, 3);
+
+Y = X_t * Theta_t';
+%随机设置一些评过分的电影
+Y(rand(size(Y)) > 0.5) = 0;
+R = zeros(size(Y));
+%Y不等于0的位置说明有人评过分，将其设置为1
+R(Y ~= 0) = 1;
+
+% 运行梯度检查
+%随机生成与X_t ，Theta_t 同样大小的矩阵X，Theta，用来模拟真正的数据
+X = randn(size(X_t));
+Theta = randn(size(Theta_t));
+num_users = size(Y, 2);
+num_movies = size(Y, 1);
+num_features = size(Theta_t, 2);
+
+%计算数值梯度numgrad
+numgrad = computeNumericalGradient(@(t) cofiCostFunc(t, Y, R, num_users, num_movies, num_features, lambda), [X(:); Theta(:)]);
+
+%计算分析梯度grad
+[cost, grad] = cofiCostFunc([X(:); Theta(:)],  Y, R, num_users, num_movies, num_features, lambda);
+
+%展示计算得到的两个梯度，发现他们相似，
+disp([numgrad grad]);
+fprintf(['The above two columns you get should be very similar.\n'  '(Left-Your Numerical Gradient, Right-Analytical Gradient)\n\n']);
+
+%评估两个解决方案之间的差异的范数
+diff = norm(numgrad-grad)/norm(numgrad+grad);
+fprintf(['If your cost function implementation is correct, then \n'  'the relative difference will be small (less than 1e-9). \n'   '\nRelative Difference: %g\n'], diff);
+%到此时就完成了cofiCostFunc.m 中核对梯度的函数
+%在ex8_cofi中调用cofiCostFunc函数，检验函数是否正确
+checkCostFunction;
+
+
+
+4.计算正则化的协同过滤的代价函数：Collaborative Filtering Cost Regularization
+%在之前我们完成了不带正则化项的代价函数以及梯度的计算
+%接下来我们要计算带正则化项的代价函数，对原来的文件进行更改
+J = sum(sum(((X * Theta') .* R - Y .* R) .^ 2)) / 2 + sum(sum(Theta .^ 2)) * lambda / 2 + sum(sum(X .^ 2)) * lambda / 2;
+
+%在ex8_cofi中，用之前加载的数据来评估正则化的代价函数
+J = cofiCostFunc([X(:) ; Theta(:)], Y, R, num_users, num_movies, num_features, 1.5);
+
+
+
+5.计算正则化的协同过滤的梯度：Collaborative Filtering Gradient Regularization
+%对之前的梯度计算进行更改
+X_grad = ((X * Theta') .* R - Y .* R) * Theta + lambda * X;
+Theta_grad = ((X * Theta') .* R - Y .* R)' * X + lambda * Theta;
+
+%通过checkCostFunction函数检验梯度
+checkCostFunction(1.5);
+
+
+6.为新用户输入评级：Entering ratings for a new user 
+%在我们训练协同过滤模型之前，我们将首先添加与我们刚刚观察到的新用户对应的评级。这部分代码还将允许我们在数据集中放入新的的电影评级
+%使用 loadMovieList.m中的 loadMovieList函数，这个函数读取movie.txt中的固定电影列表，并返回单词的单元格数组
+%读取固定电影列表
+fid = fopen('movie_ids.txt');
+%将所有的电影存储在单元数组中，利用for循环
+n = 1682;  
+movieList = cell(n, 1);
+for i = 1:n
+    % Read line
+    line = fgets(fid);
+    % Word Index (can ignore since it will be = i)
+    [idx, movieName] = strtok(line, ' ');                        %每次取出空格前的字符串
+    % Actual Word
+    movieList{i} = strtrim(movieName);                        %删除每个字符串不需要的空白并将其存入数组
+end
+fclose(fid);
+
+%在ex8_cofi中调用函数，将数据加载到环境中
+movieList = loadMovieList();
+
+
+%然后初始化我的评分
+my_ratings = zeros(1682, 1);
+
+%检查文件movie_idx.txt，获取数据集中每个电影的id，并为部分电影评分，比如喜欢第一部电影就可以评分：
+my_ratings(1) = 4;
+%如果不喜欢第98部电影，可以评分：
+my_ratings(1) = 4;
+
+%我们挑选了一些我们喜欢/不喜欢的电影，给的评级如下
+my_ratings(7) = 3;
+my_ratings(12)= 5;
+my_ratings(54) = 4;
+my_ratings(64)= 5;
+my_ratings(66)= 3;
+my_ratings(69) = 5;
+my_ratings(183) = 4;
+my_ratings(226) = 5;
+my_ratings(355)= 5;
+
+%然后输出新打的评分
+%利用for循环遍历，如果my_ratings(i) > 0，说明这是我的新评分，输出这部电影及我对这部电影的评分
+for i = 1:length(my_ratings)
+    if my_ratings(i) > 0 
+        fprintf('Rated %d for %s\n', my_ratings(i), ...
+                 movieList{i});
+    end
+end
+
+
+7.训练模型：Learning Movie Ratings
+%上面都是用小数据集评估调试协作过滤算法的各个函数
+%现在，我们将在包含1682部电影和943个用户的电影评级数据集上训练协作过滤模型
+%首先，加载数据
+load('ex8_movies.mat');
+
+%数据如下，每一列都是一个用户数据：
+%  Y is a 1682x943 matrix, containing ratings (1-5) of 1682 movies by 943 users
+%  R is a 1682x943 matrix, where R(i,j) = 1 if and only if user j gave a rating to movie i
+
+%将我们自己的评分数据加入数据集中，即在两个矩阵中新加一行
+Y = [my_ratings Y];
+%my_ratings ~= 0这是一个判断式，如果my_ratings ~= 0则是1，my_ratings = 0则是0，得到一个由0，1组成的列向量，加入R中
+R = [(my_ratings ~= 0) R];
+
+
+%在normalizeRatings.m中将评分进行标准化，通过减去每部电影(每行)的平均评级对数据进行预处理
+%normalizeRatings(Y,R)函数用来规范化Y，使每部电影的平均评级为0，并在Ymean中返回平均评级
+function [Ynorm, Ymean] = normalizeRatings(Y, R)
+[m, n] = size(Y);
+%用来存放均值
+Ymean = zeros(m, 1);
+%用来存放均值归一化的数据
+Ynorm = zeros(size(Y));
+for i = 1:m
+    idx = find(R(i, :) == 1);           %找到对每部电影评分的用户的索引
+    Ymean(i) = mean(Y(i, idx));     %求均值
+    Ynorm(i, idx) = Y(i, idx) - Ymean(i);   %进行均值归一化
+end
+
+
+%在ex8_cofi中调用该函数，得到均值与归一化后的矩阵
+[Ynorm, Ymean] = normalizeRatings(Y, R);
+
+%求出要用的数据
+num_users = size(Y, 2);
+num_movies = size(Y, 1);
+num_features = 10;
+
+%随机初始化用户喜好参数与电影特征参数
+X = randn(num_movies, num_features);
+Theta = randn(num_users, num_features);
+
+%将初始化的两个参数矩阵转化为列向量并合成一个矩阵，第一列为参数X，第二列为参数Theta
+initial_parameters = [X(:); Theta(:)];
+
+%设置优化函数fmincg的选项
+options = optimset('GradObj', 'on', 'MaxIter', 100);
+
+%设置正则化参数并最小化代价函数，得到全部参数
+lambda = 10;
+theta = fmincg (@(t)(cofiCostFunc(t, Ynorm, R, num_users, num_movies, num_features, lambda)), initial_parameters, options);
+
+%将得到的参数展开为两个参数矩阵
+X = reshape(theta(1:num_movies*num_features), num_movies, num_features);
+Theta = reshape(theta(num_movies*num_features+1:end), num_users, num_features);
+
+%至此，推荐系统学习完毕
+
+
+8.使用学习好的推荐系统为我们推荐电影：Recommendation for you 
+%使用训练好的模型进行预测，预测后的数据要加上均值才能到得到原始的评分（由于之前减去了均值）
+p = X * Theta';                                        %求得预测，得到均值归一化后的评分
+my_predictions = p(:,1) + Ymean;          %得到y原始评分
+
+%使用loadMovieList函数得到电影数据
+movieList = loadMovieList();
+
+
+%使用sort函数对预测得到的数据my_predictions进行降序排序
+%ix为返回的排序后元素在原数组中的行位置或列位置
+[r, ix] = sort(my_predictions, 'descend');
+
+%得到评分前几的电影，可以将这些电影推荐给我们：
+for i=1:10
+    j = ix(i);     %ix(1)表示排在第一的电影在原先my_predictions中的位置为j
+    fprintf('Predicting rating %.1f for movie %s\n', my_predictions(j), movieList{j});
+end
+
+%打印我们原先评分的电影及评分
+for i = 1:length(my_ratings)
+    if my_ratings(i) > 0 
+        fprintf('Rated %d for %s\n', my_ratings(i), movieList{i});
+    end
+end
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
