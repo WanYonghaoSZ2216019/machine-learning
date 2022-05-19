@@ -1,0 +1,187 @@
+在本练习中，将使用支持向量机(svm)构建垃圾邮件分类器
+在开始作业之前进行初始化：clear ; close all; clc
+在本练习的前半部分，将使用支持向量机(svm)处理各种示例2D数据集。使用这些数据集进行试验将帮助直观地了解支持向量机的工作方式，以及如何在支持向量机中使用高斯核函数
+在下一部分练习中，将使用支持向量机构建垃圾邮件分类器
+脚本ex6.m将会帮助我们将编写的代码调用起来，最后完成作业
+
+第一部分：使用SVM处理各种数据集
+1.加载和可视化数据：Loading and Visualizing Data 
+%首先通过加载和可视化数据集开始练习。下面的代码将把数据集加载到您的环境中并进行绘图，从一个可以由线性边界分隔的2D示例数据集开始
+% Load from ex6data1: 
+% You will have X, y in your environment
+load('ex6data1.mat');
+
+% Plot training data
+plotData(X, y);      %将数据集分为正负样本坐标分别进行绘制，具体代码可以查看plotData.m文件
+%绘制出图像，正例(用+表示)和反例(用o表示)的位置表明了一个由间隔表示的自然分隔，在这个数据集中，还是存在异常的数据点，后面将看到这个异常值如何影响SVM的决策边界
+
+
+2.训练线性支持向量机：Training Linear SVM 
+%接下来就要通过上面加载的数据训练线性SVM，并绘制学习到的决策边界
+% Load from ex6data1: 
+% You will have X, y in your environment
+load('ex6data1.mat');
+
+% You should try to change the C value below and see how the decision、
+%在本部分练习中，您将尝试对svm使用不同的C参数值。C参数是一个正值，它控制错误分类训练示例的惩罚
+%C的作用类似于1/lambda，lambda是正则化参数
+% boundary varies (e.g., try C = 1000)
+
+C = 1;
+%X是训练样本的数据矩阵，每一行代表一个训练样本，y是一个标签列向量，正样本对应标签1，负样本对应标签0，C是标准SVM正则化参数
+%参数3是训练SVM的线性核函数，参数4是确定浮点数，参数5是迭代次数
+model = svmTrain(X, y, C, @linearKernel, 1e-3, 20);                         %这是一个简化版训练SVM的SMO算法，吴恩达老师并未讲，知道功能就行，得到一个训练好的SVM模型
+visualizeBoundaryLinear(X, y, model);                                               %通过训练好的模型可视化线性决策边界
+
+
+3.实现高斯核函数
+%现在，您将实现用于SVM的高斯核核函数。你应该在gaussianKernel.m中完成代码
+%返回x1和x2之间的高斯核
+function sim = gaussianKernel(x1, x2, sigma)
+sim = exp(-sum((x1 - x2).^2 ./ (2*sigma^2)));
+
+%再ex6.m中进行调试
+x1 = [1 2 1]; x2 = [0 4 -1]; sigma = 2;
+sim = gaussianKernel(x1, x2, sigma);
+
+fprintf(['Gaussian Kernel between x1 = [1; 2; 1], x2 = [0; 4; -1], sigma = %f :'  '\n\t%f\n(for sigma = 2, this value should be about 0.324652)\n'], sigma, sim);
+
+
+4.加载并可视化第二个数据集：Visualizing Dataset 2 
+%接下来要加载并可视化第二个数据集
+%加载数据集
+load('ex6data2.mat');
+%绘制训练数据
+plotData(X, y);
+
+
+5.对第二个数据集使用高斯核函数训练SVM：Training SVM with RBF Kernel (Dataset 2) 
+%之前我们已经完成高斯核函数的代码，现在使用高斯核函数训练SVM分类器
+% 加载数据集，在环境中得到X，y数据集
+load('ex6data2.mat');
+
+%设置SVM参数，设置成这样是为了运行的更快，在实际使用中可以在验证集上调整参数
+C = 1; sigma = 0.1;
+
+%训练得到模型model
+model= svmTrain(X, y, C, @(x1, x2) gaussianKernel(x1, x2, sigma)); 
+
+%可视化得到的决策边界
+visualizeBoundary(X, y, model);
+
+6.加载并可视化第三个数据集：Visualizing Dataset 3 
+%接下来要加载并可视化第三个数据集
+%加载数据集
+load('ex6data3.mat');
+
+% 绘制训练集数据
+plotData(X, y);
+
+
+7.对第三个数据集使用高斯核函数训练SVM：Training SVM with RBF Kernel (Dataset 3) 
+%在这个训练集中使用dataset3Params函数返回合适的C和sigma参数
+function [C, sigma] = dataset3Params(X, y, Xval, yval)
+%设置参数计算最小误差
+min_error = 0;
+% 测试参数
+value = [0.01; 0.03; 0.1; 0.3; 1; 3; 10; 30];   
+for i = 1 : length(value)
+    for j = 1 : length(value)
+        model = svmTrain(X, y, value(i), @(x1, x2) gaussianKernel(x1, x2, value(j)));   %选取C和sigma用训练集训练
+        predictions = svmPredict(model, Xval);   % 用交叉验证集预测
+	  % 用于计算误差,若预测集和真实集则为1，否则为0
+        judge_error = mean(double(predictions ~= yval)); 
+	  % 选取出错结果最少的参数C和sigma   
+        if judge_error < min_error            
+            min_error = judge_error;
+            C = value(i);
+            sigma = value(j);
+        end
+    end
+end
+
+%在ex6.m中验证
+%首先加载数据集
+load('ex6data3.mat');
+
+% 使用函数进行参数选择
+[C, sigma] = dataset3Params(X, y, Xval, yval);
+
+% 训练模型model
+model= svmTrain(X, y, C, @(x1, x2) gaussianKernel(x1, x2, sigma));
+
+%可视化训练好的决策边界
+visualizeBoundary(X, y, model);
+
+
+第二部分：使用SVM构建垃圾邮件分类器
+
+1.电子邮件预处理：Email Preprocessing 
+%要使用支持向量机将邮件分类为垃圾邮件和非垃圾邮件，首先需要将每封邮件转换为一个特征向量。
+%在本部分中，我们将实现每个电子邮件的预处理步骤。您应该在processEmail.m中完成代码生成给定电子邮件的单词索引向量
+%提取特征
+file_contents = readFile('emailSample1.txt');
+word_indices  = processEmail(file_contents);
+
+%打印现在的情况
+fprintf('Word Indices: \n');
+fprintf(' %d', word_indices);
+
+
+2.特征提取：Feature Extraction 
+%现在，我们要把每封邮件转换成R^n的特征向量。您应该在emailFeatures.m中完成代码，为给定的电子邮件生成特征向量
+% 特征提取
+file_contents = readFile('emailSample1.txt');
+word_indices  = processEmail(file_contents);
+features      = emailFeatures(word_indices);
+
+% 打印现状
+fprintf('Length of feature vector: %d\n', length(features));
+fprintf('Number of non-zero entries: %d\n', sum(features > 0));
+
+
+%为垃圾邮件分类器训练SVM：Train Linear SVM for Spam Classification 
+%加载邮件数据集
+load('spamTrain.mat');
+
+fprintf('\nTraining Linear SVM (Spam Classification)\n')
+fprintf('(this may take 1 to 2 minutes) ...\n')
+
+%设置参数并训练模型
+C = 0.1;
+model = svmTrain(X, y, C, @linearKernel);
+
+%进行预测
+p = svmPredict(model, X);
+
+%得到预测准确度
+fprintf('Training Accuracy: %f\n', mean(double(p == y)) * 100);
+
+
+
+3.在测试集上测试垃圾邮件分类器：Test Spam Classification 
+%加载测试集
+load('spamTest.mat');
+
+fprintf('\nEvaluating the trained Linear SVM on a test set ...\n')
+
+%进行预测
+p = svmPredict(model, Xtest);
+
+%得到预测准确度
+fprintf('Test Accuracy: %f\n', mean(double(p == ytest)) * 100);
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
